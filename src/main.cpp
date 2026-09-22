@@ -32,6 +32,17 @@ uint8_t count = 0;
 bool vorigeState1 = HIGH;
 bool vorigeState2 = HIGH;
 
+bool metingGestart = false;
+
+unsigned long tijdStartMeting = 0;
+unsigned long verstrekenTijd = 0;
+
+float afstand = 0.6;
+float snelheid = 0.0;
+
+uint8_t displayGetal1 = 0;
+uint8_t displayGetal2 = 0;
+
 bool displayActief = false;
 
 uint8_t huidigeDigit = 1;
@@ -44,6 +55,9 @@ bool axle_detected(uint8_t pin);
 bool vehicle_passed();
 
 void display_counter();
+
+void determine_and_show_speed();
+void show_speed(float snelheid);
 
 void show_digit(uint8_t digit, uint8_t getal);
 void refresh_display();
@@ -66,9 +80,9 @@ void loop()
         }
 
         display_counter();
-
-        displayActief = true;
     }
+
+    determine_and_show_speed();
 
     refresh_display();
 }
@@ -166,8 +180,23 @@ bool vehicle_passed()
 {
     if (axle_detected(telslang1))
     {
-        if (axle_detected(telslang2))
+        if (!metingGestart)
         {
+            tijdStartMeting = millis();
+            metingGestart = true;
+
+            clear_display();
+        }
+    }
+
+    if (axle_detected(telslang2))
+    {
+        if (metingGestart)
+        {
+            verstrekenTijd = millis() - tijdStartMeting;
+
+            metingGestart = false;
+
             return true;
         }
     }
@@ -198,6 +227,33 @@ void display_counter()
         PORTC &= ~(1 << led8);
 }
 
+void determine_and_show_speed()
+{
+    if (verstrekenTijd == 0)
+    {
+        return;
+    }
+
+    float tijdInSeconden = verstrekenTijd / 1000.0;
+
+    snelheid = afstand / tijdInSeconden;
+
+    verstrekenTijd = 0;
+
+    show_speed(snelheid);
+}
+
+void show_speed(float snelheid)
+{
+    // Snelheid afronden op één decimaal
+    uint8_t snelheidTiende = (uint8_t)(snelheid * 10.0 + 0.5);
+
+    displayGetal1 = snelheidTiende / 10;
+    displayGetal2 = snelheidTiende % 10;
+
+    displayActief = true;
+}
+
 void refresh_display()
 {
     if (!displayActief)
@@ -214,12 +270,12 @@ void refresh_display()
 
     if (huidigeDigit == 1)
     {
-        show_digit(1, count);
+        show_digit(1, displayGetal1);
         huidigeDigit = 2;
     }
     else
     {
-        show_digit(2, 0);
+        show_digit(2, displayGetal2);
         huidigeDigit = 1;
     }
 }
@@ -332,7 +388,13 @@ void show_digit(uint8_t digit, uint8_t getal)
             break;
     }
 
-    // Juiste digit aanzetten
+    // Decimal point bij eerste digit
+    if (digit == 1)
+    {
+        PORTC |= (1 << segmentDP);
+    }
+
+    // Juiste digit aan
     if (digit == 1)
     {
         PORTB &= ~(1 << digit1);
