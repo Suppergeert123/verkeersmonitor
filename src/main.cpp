@@ -26,6 +26,9 @@ const uint8_t digit3 = PB2;
 
 const unsigned long debounceTime = 50;
 const unsigned long displayRefreshTime = 2000;
+const unsigned long maxTime = 1000;
+
+const float minSpeed = 0.0556; // 0.2 km/u in m/s
 
 uint8_t count = 0;
 
@@ -58,6 +61,7 @@ void display_counter();
 
 void determine_and_show_speed();
 void show_speed(float snelheid);
+bool valid_speed(float snelheid);
 
 void show_digit(uint8_t digit, uint8_t getal);
 void refresh_display();
@@ -193,11 +197,30 @@ bool vehicle_passed()
     {
         if (metingGestart)
         {
-            verstrekenTijd = millis() - tijdStartMeting;
+            if (millis() - tijdStartMeting < maxTime)
+            {
+                verstrekenTijd = millis() - tijdStartMeting;
+
+                metingGestart = false;
+
+                return true;
+            }
 
             metingGestart = false;
+        }
+    }
 
-            return true;
+    // Controleer of de minimale snelheid bereikt kan worden
+    if (metingGestart)
+    {
+        float tijdInSeconden =
+            (millis() - tijdStartMeting) / 1000.0;
+
+        float huidigeSnelheid = afstand / tijdInSeconden;
+
+        if (huidigeSnelheid < minSpeed)
+        {
+            metingGestart = false;
         }
     }
 
@@ -240,13 +263,33 @@ void determine_and_show_speed()
 
     verstrekenTijd = 0;
 
-    show_speed(snelheid);
+    if (valid_speed(snelheid))
+    {
+        show_speed(snelheid);
+    }
+    else
+    {
+        clear_display();
+    }
+}
+
+bool valid_speed(float snelheid)
+{
+    float snelheidKmh = snelheid * 3.6;
+
+    if (snelheidKmh >= 0.2)
+    {
+        return true;
+    }
+
+    return false;
 }
 
 void show_speed(float snelheid)
 {
     // Snelheid afronden op één decimaal
-    uint8_t snelheidTiende = (uint8_t)(snelheid * 10.0 + 0.5);
+    uint8_t snelheidTiende =
+        (uint8_t)(snelheid * 10.0 + 0.5);
 
     displayGetal1 = snelheidTiende / 10;
     displayGetal2 = snelheidTiende % 10;
