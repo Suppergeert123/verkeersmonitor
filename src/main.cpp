@@ -24,24 +24,25 @@ const uint8_t digit1 = PB0;
 const uint8_t digit2 = PB1;
 const uint8_t digit3 = PB2;
 
-const unsigned long debounceTime = 50;
-const unsigned long displayRefreshTime = 2000;
-const unsigned long maxTime = 1000;
+const uint8_t ledFoutieveMeting = PB3;
 
-const float minSpeed = 0.0556; // 0.2 km/u in m/s
+const unsigned long debounceTime = 50;
+const unsigned long maxTime = 1000;
+const unsigned long displayRefreshTime = 2000;
+const float minSpeed = 0.0556; // minimum snelheid in m/s
 
 uint8_t count = 0;
 
+bool metingGestart = false;
+unsigned long tijdStartMeting = 0;
+
+// start op high door de pull up
 bool vorigeState1 = HIGH;
 bool vorigeState2 = HIGH;
 
-bool metingGestart = false;
-
-unsigned long tijdStartMeting = 0;
 unsigned long verstrekenTijd = 0;
-
-float afstand = 0.6;
 float snelheid = 0.0;
+float afstand = 0.6;
 
 uint8_t displayGetal1 = 0;
 uint8_t displayGetal2 = 0;
@@ -61,19 +62,24 @@ void display_counter();
 
 void determine_and_show_speed();
 void show_speed(float snelheid);
-bool valid_speed(float snelheid);
-
 void show_digit(uint8_t digit, uint8_t getal);
 void refresh_display();
+
 void clear_display();
+bool valid_speed(float snelheid);
+
+void check_serial();
 
 void setup()
 {
     InitializeIO();
+    Serial.begin(9600);
 }
 
 void loop()
 {
+    check_serial();
+
     if (vehicle_passed())
     {
         count++;
@@ -123,6 +129,7 @@ void InitializeIO()
             (1 << digit2) |
             (1 << digit3);
 
+    // Display standaard uit
     clear_display();
 }
 
@@ -184,9 +191,13 @@ bool vehicle_passed()
 {
     if (axle_detected(telslang1))
     {
+        // rode led aan
+        PORTB |= (1 << ledFoutieveMeting);
+
         if (!metingGestart)
         {
             tijdStartMeting = millis();
+
             metingGestart = true;
 
             clear_display();
@@ -195,6 +206,9 @@ bool vehicle_passed()
 
     if (axle_detected(telslang2))
     {
+        // rode led aan
+        PORTB |= (1 << ledFoutieveMeting);
+
         if (metingGestart)
         {
             if (millis() - tijdStartMeting < maxTime)
@@ -203,6 +217,8 @@ bool vehicle_passed()
 
                 metingGestart = false;
 
+                PORTB &= ~(1 << ledFoutieveMeting);
+
                 return true;
             }
 
@@ -210,18 +226,15 @@ bool vehicle_passed()
         }
     }
 
-    // Controleer of de minimale snelheid bereikt kan worden
-    if (metingGestart)
+    // controle of de snelheid niet onder de 0.2 km/u valt
+    if (metingGestart && afstand / ((millis() - tijdStartMeting) / 1000) < minSpeed)
     {
-        float tijdInSeconden =
-            (millis() - tijdStartMeting) / 1000.0;
+        metingGestart = false;
+    }
 
-        float huidigeSnelheid = afstand / tijdInSeconden;
-
-        if (huidigeSnelheid < minSpeed)
-        {
-            metingGestart = false;
-        }
+    if (millis() - tijdStartMeting > maxTime)
+    {
+        metingGestart = false;
     }
 
     return false;
@@ -288,8 +301,12 @@ bool valid_speed(float snelheid)
 void show_speed(float snelheid)
 {
     // Snelheid afronden op één decimaal
-    uint8_t snelheidTiende =
-        (uint8_t)(snelheid * 10.0 + 0.5);
+    if (snelheid > 2.78)
+    {
+        snelheid = 2.78;
+    }
+
+    uint8_t snelheidTiende = (uint8_t)(snelheid * 10.0 + 0.5);
 
     displayGetal1 = snelheidTiende / 10;
     displayGetal2 = snelheidTiende % 10;
@@ -341,6 +358,7 @@ void show_digit(uint8_t digit, uint8_t getal)
                (1 << segmentG) |
                (1 << segmentDP));
 
+    // Juiste segmenten voor het getal aanzetten
     switch (getal)
     {
         case 0:
@@ -431,13 +449,13 @@ void show_digit(uint8_t digit, uint8_t getal)
             break;
     }
 
-    // Decimal point bij eerste digit
+    // Decimal point alleen bij digit 1
     if (digit == 1)
     {
         PORTC |= (1 << segmentDP);
     }
 
-    // Juiste digit aan
+    // Juiste digit aanzetten
     if (digit == 1)
     {
         PORTB &= ~(1 << digit1);
@@ -468,3 +486,44 @@ void clear_display()
                (1 << segmentG) |
                (1 << segmentDP));
 }
+
+void check_serial()
+{
+    static float nieuweAfstand = 0;
+    static float decimaal = 0.1;
+    static bool achterKomma = false;
+
+    while (Serial.available() > 0)
+    {
+        char teken = Serial.read();
+
+        if (teken >= '0' && teken <= '9')
+        {
+            if (!achterKomma)
+            {
+                nieuweAfstand = nieuweAfstand * 10 + (teken - '0');
+            }
+            else
+            {
+                nieuweAfstand += (teken - '0') * decimaal;
+                decimaal *= 0.1;
+            }
+        }
+        else if (teken == '.')
+        {
+            achterKomma = true;
+        }
+        else if (teken == '\n')
+        {
+            if (nieuweAfstand > 0)
+            {
+                afstand = nieuweAfstand;
+            }
+
+            nieuweAfstand = 0;
+            decimaal = 0.1;
+            achterKomma = false;
+        }
+    }
+}
+
