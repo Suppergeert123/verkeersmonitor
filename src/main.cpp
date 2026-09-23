@@ -34,6 +34,7 @@ const float minSpeed = 0.0556; // minimum snelheid in m/s
 uint8_t count = 0;
 
 bool metingGestart = false;
+bool voorsteBandenGeweest = false;
 unsigned long tijdStartMeting = 0;
 
 // start op high door de pull up
@@ -82,7 +83,9 @@ void loop()
 
     if (vehicle_passed())
     {
-        count++;
+        if(voorsteBandenGeweest){
+            count++;
+        }
 
         if (count > 15)
         {
@@ -196,6 +199,8 @@ bool vehicle_passed()
 
         if (!metingGestart)
         {
+            voorsteBandenGeweest = !voorsteBandenGeweest;
+
             tijdStartMeting = millis();
 
             metingGestart = true;
